@@ -501,7 +501,7 @@
                     'Fingir que nada aconteceu e guardar raiva'
                 ],
                 correct: 1,
-                explanation: 'Parar, pensar e escolher com calma é demonstrar força interior! Quando você não segue o impulso da raiva, evita brigas e toma decisões melhores.',
+                explanation: 'Parar, acreditar em si mesmo e escolher com calma é demonstrar força interior! Quando você não segue o impulso da raiva, evita brigas e toma decisões melhores.',
                 autonomiaExplicacao: '🧠 Autonomia Psicológica: Você aprendeu a entender suas emoções e a não agir por impulso. Isso é autoconfiança!'
             },
             {
@@ -610,8 +610,20 @@
             }
         ];
 
+        // Função para embaralhar array (Fisher-Yates)
+        function shuffleArray(array) {
+            const newArray = [...array];
+            for (let i = newArray.length - 1; i > 0; i--) {
+                const j = Math.floor(Math.random() * (i + 1));
+                [newArray[i], newArray[j]] = [newArray[j], newArray[i]];
+            }
+            return newArray;
+        }
+
         // Estado do jogo
         let currentQuestion = 0;
+        let currentQuestionData = null; // Guardar dados da questão atual com opções randomizadas
+        let hasTriedCurrentQuestion = false; // Controlar se já tentou responder a questão atual
         let scores = {
             psicologica: { acertos: 0, total: 0 },
             legal: { acertos: 0, total: 0 },
@@ -641,6 +653,27 @@
 
             const q = questions[currentQuestion];
             
+            // Criar array de opções com seus índices originais
+            const optionsWithIndex = q.options.map((option, index) => ({
+                text: option,
+                originalIndex: index
+            }));
+            
+            // Embaralhar as opções
+            const shuffledOptions = shuffleArray(optionsWithIndex);
+            
+            // Encontrar qual é a nova posição da resposta correta
+            const correctAnswerNewIndex = shuffledOptions.findIndex(
+                opt => opt.originalIndex === q.correct
+            );
+            
+            // Guardar dados da questão atual com as opções embaralhadas
+            currentQuestionData = {
+                ...q,
+                shuffledOptions: shuffledOptions,
+                correctIndex: correctAnswerNewIndex
+            };
+            
             // Atualizar contadores
             document.getElementById('questionNumber').textContent = `Situação ${currentQuestion + 1} de ${questions.length}`;
             
@@ -653,17 +686,20 @@
             document.getElementById('situation').textContent = q.situation;
             document.getElementById('questionText').textContent = q.question;
             
-            // Criar opções
+            // Criar opções embaralhadas
             const optionsContainer = document.getElementById('options');
             optionsContainer.innerHTML = '';
             
-            q.options.forEach((option, index) => {
+            shuffledOptions.forEach((option, index) => {
                 const optionDiv = document.createElement('div');
                 optionDiv.className = 'option';
-                optionDiv.textContent = option;
+                optionDiv.textContent = option.text;
                 optionDiv.onclick = () => selectOption(index);
                 optionsContainer.appendChild(optionDiv);
             });
+            
+            // Resetar controle de tentativa
+            hasTriedCurrentQuestion = false;
             
             // Esconder feedback e botão
             document.getElementById('feedback').classList.remove('show');
@@ -672,42 +708,57 @@
 
         // Selecionar opção
         function selectOption(selectedIndex) {
-            const q = questions[currentQuestion];
+            const q = currentQuestionData; // Usar os dados da questão com opções embaralhadas
             const options = document.querySelectorAll('.option');
             
-            // Desabilitar todas as opções
-            options.forEach(opt => opt.classList.add('disabled'));
-            
-            // Marcar correta e errada
-            options[q.correct].classList.add('correct');
-            if (selectedIndex !== q.correct) {
+            // Verificar se acertou
+            if (selectedIndex === q.correctIndex) {
+                // ACERTOU - desabilitar todas e marcar como correta
+                options.forEach(opt => opt.classList.add('disabled'));
+                options[selectedIndex].classList.add('correct');
+                
+                // Atualizar scores APENAS se acertou de primeira
+                if (!hasTriedCurrentQuestion) {
+                    scores[q.autonomia].acertos++;
+                }
+                // Total sempre incrementa (acertou de primeira ou não)
+                scores[q.autonomia].total++;
+                
+                // Atualizar medidores
+                updateMedidores();
+                
+                // Mostrar feedback positivo
+                showFeedback(true, q, !hasTriedCurrentQuestion);
+                
+                // Mostrar botão próximo
+                document.getElementById('nextBtn').style.display = 'block';
+            } else {
+                // ERROU - apenas marcar como errada e permitir nova tentativa
                 options[selectedIndex].classList.add('wrong');
+                options[selectedIndex].classList.add('disabled');
+                
+                // Marcar que já tentou (perdeu a chance de pontuar)
+                hasTriedCurrentQuestion = true;
+                
+                // Mostrar feedback negativo (mas não revelar a correta)
+                showFeedback(false, q, false);
+                
+                // NÃO mostrar o botão próximo - forçar tentar de novo
             }
-            
-            // Atualizar scores
-            scores[q.autonomia].total++;
-            if (selectedIndex === q.correct) {
-                scores[q.autonomia].acertos++;
-            }
-            
-            // Atualizar medidores
-            updateMedidores();
-            
-            // Mostrar feedback
-            showFeedback(selectedIndex === q.correct, q);
-            
-            // Mostrar botão próximo
-            document.getElementById('nextBtn').style.display = 'block';
         }
 
         // Mostrar feedback
-        function showFeedback(isCorrect, question) {
+        function showFeedback(isCorrect, question, isFirstTry) {
             const feedback = document.getElementById('feedback');
             feedback.className = 'feedback show ' + (isCorrect ? 'correct' : 'wrong');
             
-            document.getElementById('feedbackTitle').innerHTML = isCorrect 
-                ? '✅ Muito bem!' 
-                : '❌ Não foi dessa vez...';
+            if (isCorrect) {
+                document.getElementById('feedbackTitle').innerHTML = isFirstTry 
+                    ? '✅ Muito bem! Acertou de primeira!' 
+                    : '✅ Correto! (Mas você errou antes, então não pontuou nesta)';
+            } else {
+                document.getElementById('feedbackTitle').innerHTML = '❌ Tente outra opção...';
+            }
             
             document.getElementById('feedbackText').textContent = question.explanation;
             document.getElementById('autonomiaInfo').textContent = question.autonomiaExplicacao;
@@ -717,7 +768,10 @@
         function updateMedidores() {
             Object.keys(scores).forEach(autonomia => {
                 const data = scores[autonomia];
-                const percentage = data.total > 0 ? Math.round((data.acertos / data.total) * 100) : 0;
+                // Garantir que nunca passe de 100%
+                const percentage = data.total > 0 
+                    ? Math.min(100, Math.round((data.acertos / data.total) * 100)) 
+                    : 0;
                 
                 document.getElementById(`valor-${autonomia}`).textContent = percentage;
                 document.getElementById(`barra-${autonomia}`).style.width = percentage + '%';
